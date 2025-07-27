@@ -1,0 +1,469 @@
+[Version]
+10.1.1.1057
+[File Access]
+0   
+45845
+! 
+! 
+! 
+! 
+! 
+! 
+! 
+! 
+3   4
+psi
+0   1
+pos_x
+1   1
+pos_y
+2   1
+lateral_distance
+3   1
+pos_S
+7   1
+v_ref
+8   1
+v_max
+9   1
+[Export Parameter Count]
+0
+[Block Count]
+11
+[Block #0]
+384   LABEL
+psi
+350 275 421 306  100   16777215   0   0 
+1
+1
+0 0 0   0   0
+[Block #1]
+384   LABEL
+pos_x
+350 375 421 406  100   16777215   0   0 
+1
+1
+0 0 0   0   0
+[Block #2]
+384   LABEL
+pos_y
+350 475 421 506  100   16777215   0   0 
+1
+1
+0 0 0   0   0
+[Block #3]
+384   LABEL
+lateral_distance
+775 275 846 306  100   16777215   0   0 
+1
+1
+0 0 0   0   0
+[Block #4]
+0   Text
+Text
+568 212 672 349  100   16777215   0   0 
+0
+0
+0 0 0   0   0
+Signalfolge Eingangssignale:psi, pos_x, pos_ySignalfolge Ausgangssignale:seitlicher_abstand, Referenzposition,Sollgeschwindigkeit,Maximalgeschwindigkeit,Simulation_beenden
+7   0   0   0   16777215   0   0
+ARIAL
+16776960   -1
+[Block #5]
+378   SIMCANCEL
+Simulation beenden
+750 525 821 576  100   16777215   0   0 
+1
+0
+0 0 0   0   0
+0
+[Block #6]
+0   Text
+Text
+472 148 723 197  100   16777215   0   0 
+0
+0
+0 0 0   0   0
+Seitlichen Abstand berechnen,Referenzwerte ausgeben
+16   0   2   0   16777215   0   0
+ARIAL
+16776960   -1
+[Block #7]
+384   LABEL
+pos_S
+800 325 871 356  100   16777215   0   0 
+1
+1
+0 0 0   0   0
+[Block #8]
+384   LABEL
+v_ref
+800 400 871 431  100   16777215   0   0 
+1
+1
+0 0 0   0   0
+[Block #9]
+384   LABEL
+v_max
+775 450 846 481  100   16777215   0   0 
+1
+1
+0 0 0   0   0
+[Block #10]
+385   USER1
+lateral distance and velocity calculation
+575 350 646 451  100   16777215   0   0 
+3
+5
+0 0 0   0   1
+C:\Program Files (x86)\Kahlert\WinFACT 10\UserDLLs\PyScript.dll
+*.*
+1 0 0   0
+0
+1
+253
+# In der folgenden Zeile wird die Anzahl der Ausg‰nge festgelegt (hier 3):
+# nOut = 5
+# In den folgenden drei Zeilen werden die Namen der Ausg‰nge 
+# festgelegt (kann entfallen, dann werden Standardnamen gew‰hlt)
+# Out_1 = "lateral_distance"
+# Out_2 = "pos_S"
+# Out_3 = "pos_V_ref"
+# Out_4 = "pos_V_max"
+# Out_5 = "Terminate"
+
+
+# Nachfolgend wird die eigentliche Funktion deklariert
+# Sie MUSS "main" heiﬂen!
+# Die Anzahl der Blockeing‰nge (hier 2) wird automatisch
+# aus der Parameterliste erkannt, ebenso die Namen der 
+# Blockeing‰nge (hier In_1 und In_2)
+
+import math
+
+# Global variables
+X_route = []
+Y_route = []
+S_route = []
+Vmax_route = []
+Vref_route = []
+data_read = 0
+i_small_old = 0
+sp_smaller_old = 0
+
+# file_operations is user defined function to read file, replace ',' to '.' if it contains and to store in a list.
+def file_operations(datapath, array):
+    with open(datapath, 'r') as f:
+        content = f.read()
+        modified_content = content.replace(',' , '.')
+    with open(datapath, 'w') as f:
+        f.write(modified_content)
+    with open(datapath, 'r') as f:
+        for org_line in f:
+            array.append(float(org_line))
+
+# Below is main function which calculates lateral distance, position, referance velocity and maximun velocity                    
+def main(Init, Terminate, psi, pos_x, pos_y):
+    global X_route, Y_route, S_route, Vmax_route, Vref_route, data_read, i_small_old, sp_smaller_old
+
+    # Variables for file operations
+    dataPath_X = "lane1_X_center.txt"
+    dataPath_Y = "lane1_Y_center.txt"
+    dataPath_S = "Indices_list.txt"
+    dataPath_Vmax = "speed_max.txt"
+    dataPath_Vref = "speed_referance.txt"
+    x_read, y_read, s_read, vmax_read, vref_read = 0, 0, 0, 0, 0
+    
+    # Variables for calculations
+    p_x, p_y = 0, 0
+    q_x, q_y = 0, 0
+    i, i_smaller = 0, 0
+    condition = 0
+    dx1, dy1, dx2, dy2, l1, l2 = 0, 0, 0, 0, 0, 0
+    nx1, ny1, nx2, ny2 = 0, 0, 0, 0
+    rho1, rho2 = 0, 0
+    det_1, det_2, det_3, det_4 = 0, 0, 0, 0
+    e_x, e_y = 0, 0
+    lateral_distance = 0
+
+    # Position, speed reference values, and maximum speed variables
+    sp, sp_smaller = 0, 0
+    pos_S, pos_V_ref, pos_V_max = 0, 0, 0
+    m_V_ref_N, m_V_max_N, m_V_max_ref_Z, m_V_ref, m_V_max = 0, 0, 0, 0, 0
+
+    # Constants
+    pi = 3.1415926535
+
+    # During the initialization of the simulation Init = 1
+    if Init == 1:
+        
+        # Reading the file containing the complete trajectory in X coordinates and storing in new array
+        try:
+            file_operations(dataPath_X, X_route)  
+            x_read = 1
+        except FileNotFoundError:
+            pass
+
+        # Reading the file containing the complete trajectory in Y coordinates and storing in new array
+        try:
+            file_operations(dataPath_Y, Y_route)
+            y_read = 1
+        except FileNotFoundError:
+            pass
+
+        # Reading the file containing the indices and storing in new array
+        try:
+            file_operations(dataPath_S, S_route)
+            s_read = 1
+        except FileNotFoundError:
+            pass
+
+        # Reading the file containing the maximum speed and storing in new array
+        try:
+            file_operations(dataPath_Vmax, Vmax_route)
+            vmax_read = 1
+        except FileNotFoundError:
+            pass
+
+        # Reading the file containing the reference speed and storing in new array
+        try:
+            file_operations(dataPath_Vref, Vref_route)
+            vref_read = 1
+        except FileNotFoundError:
+            pass
+
+        # Check if all files were successfully read
+        if x_read == 1 and y_read == 1 and s_read == 1 and vmax_read == 1 and vref_read == 1:
+            if len(X_route) == len(Y_route) == len(S_route) == len(Vmax_route) == len(Vref_route):
+                data_read = 1
+            else:
+                print("One of the data files is faulty!")
+                print("Simulation will be terminated!")
+                data_read = 0
+        else:
+            print("One of the data files could not be read!")
+            print("Simulation will be terminated!")
+            data_read = 0
+
+        # Set initial values for outputs
+        lateral_distance = 1.5
+        pos_S = 0
+        pos_V_ref = 100 / 3.6
+        pos_V_max = 100 / 3.6
+
+    elif Terminate == 1:
+        print("Termination in progress!")
+        Terminate()
+
+    if data_read == 1:
+        # The following lines of code are executed in every simulation step after the data files are completely read
+
+        # Calculate point P
+        p_x = pos_x + 10 * math.cos(psi)
+        p_y = pos_y + 10 * math.sin(psi)
+
+        # Calculate helper point Q
+        q_x = p_x + 10 * math.cos(psi - (pi / 2))
+        q_y = p_y + 10 * math.sin(psi - (pi / 2))
+
+        # Find the maximum value of the index i for which the condition is less than or equal to zero ...
+        i = i_small_old
+        condition = (q_x - p_x) * (Y_route[i] - p_y) - (X_route[i] - p_x) * (q_y - p_y)
+
+        while condition <= 0 and i <= len(X_route) - 2:
+            if condition <= 0:
+                i_smaller = i
+            i += 1
+            if i >= len(X_route):
+                i = len(X_route) - 1
+            condition = (q_x - p_x) * (Y_route[i] - p_y) - (X_route[i] - p_x) * (q_y - p_y)
+
+        i_small_old = i_smaller  # Save the current "i_smaller" for the next run
+
+        # Components of the line by connecting the two vertices of the "edge of the road"
+        dx1 = X_route[i_smaller + 1] - X_route[i_smaller]
+        dy1 = Y_route[i_smaller + 1] - Y_route[i_smaller]
+
+        # Components of the line by connecting points P and Q
+        dx2 = q_x - p_x
+        dy2 = q_y - p_y
+
+        # Calculating the length of the connecting lines
+        l1 = math.sqrt(dx1 * dx1 + dy1 * dy1)
+        l2 = math.sqrt(dx2 * dx2 + dy2 * dy2)
+
+        # Components of the normal vector, perpendicular to the polygon chain
+        nx1 = dy1 / l1
+        ny1 = -1 * (dx1 / l1)
+
+        # Components of the normal vector, perpendicular to the line PQ
+        nx2 = dy2 / l2
+        ny2 = -1 * (dx2 / l2)
+
+        # Calculate the distance parameter Rho for the Hessian normal form of the two straight lines
+        rho1 = nx1 * X_route[i_smaller] + ny1 * Y_route[i_smaller]
+        rho2 = nx2 * p_x + ny2 * p_y
+
+        # Calculate the intersection of the straight lines using Cramerís rule
+        # For Cramerís rule and lienar equations refer to:
+        det_1 = rho1 * ny2 - rho2 * ny1
+        det_2 = nx1 * ny2 - ny1 * nx2
+        det_3 = nx1 * rho2 - nx2 * rho1
+        det_4 = nx1 * ny2 - nx2 * ny1
+
+        e_x = det_1 / det_2
+        e_y = det_3 / det_4
+
+        # Calculate the value of the lateral distance
+        lateral_distance = math.sqrt((e_x - p_x) ** 2 + (e_y - p_y) ** 2)
+        condition = (e_x - pos_x) * (p_y - pos_y) - (p_x - pos_x) * (e_y - pos_y)
+
+        # If point P is to the right of the right edge of the road,the sign of the distance amount must be corrected
+        if condition < 0:
+            lateral_distance *= -1
+
+        # Determine position S along the trajectory
+        if i_smaller <= 1:
+            pos_S = S_route[i_smaller]
+        else:
+            pos_S = S_route[i_smaller] + math.sqrt((e_x - X_route[i_smaller]) ** 2 + (e_y - Y_route[i_smaller]) ** 2)
+
+        pos_S -= 10  # Correct the calculated route point by the distance ll0 = 10m
+        
+        if pos_S <= S_route[0]:
+            pos_S = S_route[0]
+        else:
+            pos_S = pos_S
+
+        if pos_S >= S_route[-1]:
+            pos_S = S_route[-1]
+
+        sp = sp_smaller_old  # Find out the index value for the current position/speed
+        while S_route[sp] < pos_S and sp <= len(S_route) - 1:
+            sp_smaller = sp
+            sp += 1
+
+        sp_smaller_old = sp_smaller  # Save value for sp_smaller for the next run
+
+        # Linear interpolation Slope for V_ref and V_max
+        m_V_ref_N = Vref_route[sp_smaller + 1] - Vref_route[sp_smaller]
+        m_V_max_N = Vmax_route[sp_smaller + 1] - Vmax_route[sp_smaller]
+        m_V_max_ref_Z = S_route[sp_smaller + 1] - S_route[sp_smaller]
+        m_V_ref = m_V_ref_N / m_V_max_ref_Z
+        m_V_max = m_V_max_N / m_V_max_ref_Z
+
+        pos_V_ref = Vref_route[sp_smaller] + m_V_ref * (pos_S - S_route[sp_smaller])
+        pos_V_max = Vmax_route[sp_smaller] + m_V_max * (pos_S - S_route[sp_smaller])
+
+    else:
+        lateral_distance = 1.5
+        pos_S = 0
+        pos_V_ref = 100 / 3.6
+        pos_V_max = 100 / 3.6
+
+
+    Out_1.value = lateral_distance
+    Out_2.value = pos_S
+    Out_3.value = pos_V_ref
+    Out_4.value = pos_V_max
+
+    if data_read == 0:
+        Out_5.value = 1
+    else:
+        Out_5.value = 0
+
+
+
+
+3
+psi
+pos_x
+pos_y
+5
+lateral_distance
+pos_S
+pos_V_ref
+pos_V_max
+Terminate
+0
+0
+1
+1
+[Connection Count]
+8
+[Connection #0]
+10   5   5   1   16711680   -1   0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
+
+0
+0
+9
+[Connection #1]
+10   4   9   1   16711680   -1   0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
+
+0
+0
+9
+[Connection #2]
+10   1   3   1   16711680   -1   0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
+
+0
+0
+9
+[Connection #3]
+1   1   10   2   16711680   -1   0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
+
+0
+0
+9
+[Connection #4]
+10   3   8   1   16711680   -1   0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
+
+0
+0
+9
+[Connection #5]
+10   2   7   1   16711680   -1   0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
+
+0
+0
+9
+[Connection #6]
+2   1   10   3   16711680   -1   0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
+
+0
+0
+9
+[Connection #7]
+0   1   10   1   16711680   -1   0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
+
+0
+0
+9
+[Simulation Parameters]
+ 4.50000000000000E+0001    1.00000000000000E-0001   1   2   1  0   0   1   0   0   4   0   0
+[Logical Levels]
+ 0.00000000000000E+0000    5.00000000000000E+0000    2.50000000000000E+0000
+[Frame Count]
+0
+[Optimization Parameters Count]
+0
+[Optimization Control Parameters]
+20   5   100   3   10   1   10   1   12345
+ 1.00000000000000E+0000    0.00000000000000E+0000    0.00000000000000E+0000
+OPT.DAT
+0
+1
+[Batch Parameters Count]
+0
+[Global Parameters]
+0
+[Message Options]
+BORIS.MSG
+[User Background Bitmap]
+0
+
+[Scrollbars]
+0   0
+[Control Codes]
+8CF9D8333BF2ED75DCDE37ECD585E7B1E4C28888
+C0FAD374FAFB8DC2CF3919FF62DC3709E9567A8B
